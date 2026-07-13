@@ -3,6 +3,8 @@
 在同一台 Mac 上自动双向同步 Safari“个人收藏”和 Chrome“书签栏”，同时保留两个浏览器原生的根目录层级。
 
 Bookmark Bridge maps Safari **Favorites** to Chrome **Bookmark Bar** and keeps their children in two-way sync without copying either browser's root folder.
+本项目的初衷是，在mac上本地实时自动双向同步Safari和Chrome的书签。虽然苹果官方为Chrome提供了iCloud插件，也可以实现类似功能，但官方插件存在同步有延迟、不同浏览器目录层级不同导致重复备份、不同浏览器目录层级不同导致书签异常散落在其它书签文件夹等问题。而本项目基于作者的需求，指定了同步目录为Safari的个人收藏文件夹以及Chrome书签栏，表现形式为两个浏览器的顶部书签栏实时同步，符合大部分人的使用习惯。
+<img width="1352" height="207" alt="Snipaste_2026-07-14_02-33-11" src="https://github.com/user-attachments/assets/9b3e132c-7760-4fb6-892f-077c242c4da2" />
 
 ## 特点
 
