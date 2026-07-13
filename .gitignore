@@ -1,0 +1,9 @@
+.DS_Store
+.build/
+.swift-cache/
+.swift-cache-*/
+outputs/
+work/
+*.xcuserstate
+xcuserdata/
+

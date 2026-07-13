@@ -1,0 +1,17 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run bookmark model and Safari store checks
+        run: swift run BookmarkBridgeChecks
+      - name: Validate Chrome extension JavaScript
+        run: node --check ChromeExtension/background.js
+      - name: Validate Chrome extension manifest
+        run: node -e "JSON.parse(require('fs').readFileSync('ChromeExtension/manifest.json', 'utf8'))"
