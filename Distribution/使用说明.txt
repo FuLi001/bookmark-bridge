@@ -80,8 +80,13 @@ Bookmark Bridge 在同一台 Mac 上双向同步：
 
   - Chrome 修改后，通常约 1 至 4 秒同步到 Safari。
   - Safari 修改后，通常约 2 至 6 秒同步到 Chrome。
-  - Chrome 后台扩展被系统休眠或 Mac 刚从睡眠中恢复时，最长可能约 30 秒。
+  - Safari 偶尔会延迟把书签变化写入磁盘，此时 Safari 到 Chrome 可能需要几十秒。
+  - Chrome 后台扩展被系统休眠或 Mac 刚从睡眠中恢复时，也可能增加约 30 秒等待。
   - 点击菜单栏中的“立即检查”可以手动触发一次 Safari 检查。
+
+Safari 没有提供公开的书签变更通知接口，Bookmark Bridge 只能定期读取 Safari
+的本地书签文件并比较内容。Safari 何时把编辑结果写入磁盘由 Safari 自己决定，
+所以 Safari 到 Chrome 的延迟有时会明显长于反方向；这并不表示书签已经丢失。
 
 资源使用方式：Safari 书签每 3 秒进行一次本地只读比较；Chrome 通过一个空闲的
 本地等待连接接收变更。内容没有变化时不会改写任何书签文件。

@@ -9,7 +9,7 @@ Bookmark Bridge maps Safari **Favorites** to Chrome **Bookmark Bar** and keeps t
 - 双向同步文件夹、书签标题、网址和顺序
 - Safari“个人收藏”与 Chrome“书签栏”直接映射，不制造额外嵌套层级
 - Chrome 变化通过书签事件上报，Safari 每 3 秒进行本地只读比较
-- 正常同步约需 1–6 秒；Chrome 后台休眠或 Mac 刚唤醒时可能需要约 30 秒
+- Chrome 到 Safari 通常约需 1–4 秒；Safari 到 Chrome 通常约需 2–6 秒，偶尔可能需要几十秒
 - 首次使用可选择安全合并、采用 Safari 或采用 Chrome
 - 两边同时发生不同变化时暂停同步，不擅自覆盖
 - 每次写入 Safari 前自动备份；修改 Chrome 前保存 JSON 备份
@@ -42,6 +42,10 @@ Bookmark Bridge maps Safari **Favorites** to Chrome **Bookmark Bar** and keeps t
 - Safari 不必一直开启。
 - Chrome 关闭期间无法执行 Chrome 侧修改，重新打开后会继续同步。
 - Mac 睡眠期间暂停，唤醒后恢复。
+
+### 为什么 Safari 到 Chrome 有时较慢
+
+Safari 没有提供公开的书签变更通知接口。Bookmark Bridge 只能定期读取 Safari 的本地书签文件并比较内容，而 Safari 有时会延迟把编辑结果写入磁盘，因此 Safari 到 Chrome 通常需要几秒，偶尔可能延长到几十秒。Chrome 的 Manifest V3 后台扩展被系统休眠时，也可能叠加最多约 30 秒的等待。程序检测到实际变化后才会写入另一边，不会为了追求速度持续改写书签文件。
 
 ## 安全设计
 
@@ -95,4 +99,3 @@ scripts/                      构建与打包脚本
 ## 许可证
 
 [MIT License](LICENSE)
-
