@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Bookmark Bridge",
-  "version": "1.0.0",
-  "description": "在本机同步 Chrome 书签栏与 Safari 个人收藏。",
+  "version": "1.0.1",
+  "description": "在本机双向同步指定的 Chrome 与 Safari 书签目录。",
   "permissions": ["bookmarks", "alarms"],
   "host_permissions": ["http://127.0.0.1:17315/*"],
   "background": {

@@ -35,21 +35,48 @@ public struct BookmarkNode: Codable, Equatable, Sendable {
     }
 }
 
+public struct BookmarkFolderChoice: Codable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var path: [String]
+
+    public init(id: String, title: String, path: [String]) {
+        self.id = id
+        self.title = title
+        self.path = path
+    }
+
+    public var displayPath: String {
+        path.joined(separator: " › ")
+    }
+}
+
 public struct ChromeSnapshot: Codable, Sendable {
     public var tree: BookmarkNode
+    public var folderID: String?
+    public var folderPath: String?
+    public var folders: [BookmarkFolderChoice]?
 
-    public init(tree: BookmarkNode) {
+    public init(tree: BookmarkNode,
+                folderID: String? = nil,
+                folderPath: String? = nil,
+                folders: [BookmarkFolderChoice]? = nil) {
         self.tree = tree
+        self.folderID = folderID
+        self.folderPath = folderPath
+        self.folders = folders
     }
 }
 
 public struct ChromeCommand: Codable, Sendable {
     public var revision: Int
     public var tree: BookmarkNode
+    public var folderID: String?
 
-    public init(revision: Int, tree: BookmarkNode) {
+    public init(revision: Int, tree: BookmarkNode, folderID: String? = nil) {
         self.revision = revision
         self.tree = tree
+        self.folderID = folderID
     }
 }
 

@@ -2,17 +2,17 @@ import Foundation
 
 public enum SafariStoreError: LocalizedError {
     case invalidPropertyList
-    case favoritesFolderNotFound
-    case favoritesChildrenMissing
+    case folderNotFound(String)
+    case folderChildrenMissing(String)
 
     public var errorDescription: String? {
         switch self {
         case .invalidPropertyList:
             return "Safari 书签文件格式无法识别"
-        case .favoritesFolderNotFound:
-            return "找不到 Safari 的个人收藏目录"
-        case .favoritesChildrenMissing:
-            return "Safari 个人收藏目录缺少子项"
+        case let .folderNotFound(path):
+            return "找不到 Safari 同步目录：\(path)"
+        case let .folderChildrenMissing(path):
+            return "Safari 同步目录缺少子项：\(path)"
         }
     }
 }
@@ -29,7 +29,15 @@ public struct SafariFileFingerprint: Equatable {
     }
 }
 
+public struct SafariFolderSnapshot {
+    public let tree: BookmarkNode
+    public let selectedFolder: BookmarkFolderChoice
+    public let folders: [BookmarkFolderChoice]
+}
+
 public final class SafariBookmarkStore {
+    public static let defaultFolderID = SyncFolderConfiguration.defaultSafariFolderID
+
     public let bookmarksURL: URL
     public let backupDirectory: URL
 
@@ -43,35 +51,63 @@ public final class SafariBookmarkStore {
     }
 
     public func readFavorites() throws -> BookmarkNode {
-        let data = try Data(contentsOf: bookmarksURL)
-        let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
-        guard let root = plist as? [String: Any],
-              let children = root["Children"] as? [[String: Any]] else {
+        try readFolder(id: Self.defaultFolderID).tree
+    }
+
+    public func readFolder(id: String) throws -> SafariFolderSnapshot {
+        let root = try readRoot()
+        guard let children = root["Children"] as? [[String: Any]] else {
             throw SafariStoreError.invalidPropertyList
         }
-        guard let favorites = children.first(where: Self.isFavoritesFolder) else {
-            throw SafariStoreError.favoritesFolderNotFound
+
+        let located = Self.locateFolders(in: children)
+        guard let selected = located.first(where: { $0.choice.id == id }) else {
+            throw SafariStoreError.folderNotFound(id)
         }
-        guard let favoriteChildren = favorites["Children"] as? [[String: Any]] else {
-            throw SafariStoreError.favoritesChildrenMissing
+        guard let selectedChildren = selected.dictionary["Children"] as? [[String: Any]] else {
+            throw SafariStoreError.folderChildrenMissing(selected.choice.displayPath)
         }
-        return .folder("root", children: favoriteChildren.compactMap(Self.decodeNode))
+
+        return SafariFolderSnapshot(
+            tree: .folder("root", children: selectedChildren.compactMap(Self.decodeNode)),
+            selectedFolder: selected.choice,
+            folders: located.map(\.choice)
+        )
     }
 
     @discardableResult
     public func replaceFavorites(with tree: BookmarkNode) throws -> URL {
+        try replaceFolder(id: Self.defaultFolderID, with: tree)
+    }
+
+    @discardableResult
+    public func replaceFolder(id: String, with tree: BookmarkNode) throws -> URL {
         let originalData = try Data(contentsOf: bookmarksURL)
         let plist = try PropertyListSerialization.propertyList(from: originalData, options: [], format: nil)
         guard var root = plist as? [String: Any],
-              var rootChildren = root["Children"] as? [[String: Any]],
-              let favoritesIndex = rootChildren.firstIndex(where: Self.isFavoritesFolder) else {
-            throw SafariStoreError.favoritesFolderNotFound
+              var rootChildren = root["Children"] as? [[String: Any]] else {
+            throw SafariStoreError.invalidPropertyList
         }
 
-        var favorites = rootChildren[favoritesIndex]
-        let existing = favorites["Children"] as? [[String: Any]] ?? []
-        favorites["Children"] = Self.encodeChildren(tree.children, preserving: existing)
-        rootChildren[favoritesIndex] = favorites
+        var replaced = false
+        for index in rootChildren.indices {
+            let isFavorites = Self.isFavoritesFolder(rootChildren[index])
+            let title = Self.displayTitle(for: rootChildren[index], isFavorites: isFavorites)
+            let result = Self.replacingFolder(
+                rootChildren[index],
+                targetID: id,
+                replacement: tree,
+                path: [title],
+                indexPath: [index],
+                isFavorites: isFavorites
+            )
+            rootChildren[index] = result.dictionary
+            if result.replaced {
+                replaced = true
+                break
+            }
+        }
+        guard replaced else { throw SafariStoreError.folderNotFound(id) }
         root["Children"] = rootChildren
 
         try FileManager.default.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
@@ -94,6 +130,113 @@ public final class SafariBookmarkStore {
         )
     }
 
+    private func readRoot() throws -> [String: Any] {
+        let data = try Data(contentsOf: bookmarksURL)
+        let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+        guard let root = plist as? [String: Any] else {
+            throw SafariStoreError.invalidPropertyList
+        }
+        return root
+    }
+
+    private struct LocatedFolder {
+        let choice: BookmarkFolderChoice
+        let dictionary: [String: Any]
+    }
+
+    private static func locateFolders(in dictionaries: [[String: Any]],
+                                      parentPath: [String] = [],
+                                      parentIndexPath: [Int] = []) -> [LocatedFolder] {
+        var result: [LocatedFolder] = []
+        for (index, dictionary) in dictionaries.enumerated() {
+            guard isFolder(dictionary) else { continue }
+            if parentPath.isEmpty && isExcludedRootFolder(dictionary) { continue }
+            let indexPath = parentIndexPath + [index]
+            let isFavorites = parentPath.isEmpty && isFavoritesFolder(dictionary)
+            let title = displayTitle(for: dictionary, isFavorites: isFavorites)
+            let path = parentPath + [title]
+            let choice = BookmarkFolderChoice(
+                id: folderID(for: dictionary, path: path, indexPath: indexPath, isFavorites: isFavorites),
+                title: title,
+                path: path
+            )
+            result.append(LocatedFolder(choice: choice, dictionary: dictionary))
+            let children = dictionary["Children"] as? [[String: Any]] ?? []
+            result.append(contentsOf: locateFolders(
+                in: children,
+                parentPath: path,
+                parentIndexPath: indexPath
+            ))
+        }
+        return result
+    }
+
+    private static func replacingFolder(_ dictionary: [String: Any],
+                                        targetID: String,
+                                        replacement: BookmarkNode,
+                                        path: [String],
+                                        indexPath: [Int],
+                                        isFavorites: Bool) -> (dictionary: [String: Any], replaced: Bool) {
+        var dictionary = dictionary
+        let currentID = folderID(
+            for: dictionary,
+            path: path,
+            indexPath: indexPath,
+            isFavorites: isFavorites
+        )
+        if currentID == targetID {
+            let existing = dictionary["Children"] as? [[String: Any]] ?? []
+            dictionary["Children"] = encodeChildren(replacement.children, preserving: existing)
+            return (dictionary, true)
+        }
+
+        guard var children = dictionary["Children"] as? [[String: Any]] else {
+            return (dictionary, false)
+        }
+        for index in children.indices {
+            guard isFolder(children[index]) else { continue }
+            let childTitle = displayTitle(for: children[index], isFavorites: false)
+            let result = replacingFolder(
+                children[index],
+                targetID: targetID,
+                replacement: replacement,
+                path: path + [childTitle],
+                indexPath: indexPath + [index],
+                isFavorites: false
+            )
+            children[index] = result.dictionary
+            if result.replaced {
+                dictionary["Children"] = children
+                return (dictionary, true)
+            }
+        }
+        return (dictionary, false)
+    }
+
+    private static func folderID(for dictionary: [String: Any],
+                                 path: [String],
+                                 indexPath: [Int],
+                                 isFavorites: Bool) -> String {
+        if isFavorites { return defaultFolderID }
+        if let uuid = dictionary["WebBookmarkUUID"] as? String ?? dictionary["UUID"] as? String {
+            return "safari:uuid:\(uuid)"
+        }
+        if let identifier = dictionary["WebBookmarkIdentifier"] as? String
+            ?? dictionary["Identifier"] as? String {
+            return "safari:identifier:\(identifier)"
+        }
+        return "safari:path:\(path.joined(separator: "\u{1F}"))#\(indexPath.map(String.init).joined(separator: "."))"
+    }
+
+    private static func displayTitle(for dictionary: [String: Any], isFavorites: Bool) -> String {
+        if isFavorites { return "个人收藏" }
+        return dictionary["Title"] as? String ?? "未命名文件夹"
+    }
+
+    private static func isFolder(_ dictionary: [String: Any]) -> Bool {
+        dictionary["Children"] != nil || dictionary["WebBookmarkType"] as? String == "WebBookmarkTypeList"
+    }
+
     private static func isFavoritesFolder(_ dictionary: [String: Any]) -> Bool {
         let title = dictionary["Title"] as? String ?? ""
         let identifiers = [
@@ -104,6 +247,17 @@ public final class SafariBookmarkStore {
         return identifiers.contains(where: {
             $0 == "bookmarksbar" || $0 == "favorites" || $0 == "个人收藏" ||
             $0.contains("bookmarksbar") || $0.contains("favorites")
+        })
+    }
+
+    private static func isExcludedRootFolder(_ dictionary: [String: Any]) -> Bool {
+        let identifiers = [
+            dictionary["Title"] as? String ?? "",
+            dictionary["WebBookmarkIdentifier"] as? String ?? "",
+            dictionary["Identifier"] as? String ?? "",
+        ].map { $0.lowercased() }
+        return identifiers.contains(where: {
+            $0.contains("readinglist") || $0.contains("reading list") || $0.contains("阅读列表")
         })
     }
 
@@ -127,8 +281,7 @@ public final class SafariBookmarkStore {
         return nodes.map { node in
             let matchIndex = unused.firstIndex(where: { existingNode in
                 if node.kind == .folder {
-                    return (existingNode["Children"] != nil || existingNode["WebBookmarkType"] as? String == "WebBookmarkTypeList")
-                        && existingNode["Title"] as? String == node.title
+                    return isFolder(existingNode) && existingNode["Title"] as? String == node.title
                 }
                 return existingNode["URLString"] as? String == node.url
             })

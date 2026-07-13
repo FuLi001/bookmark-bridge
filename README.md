@@ -10,12 +10,15 @@
 
 Bookmark Bridge 根据作者的实际需求，将同步范围明确限定为 Safari“个人收藏”和 Chrome“书签栏”，让两个浏览器顶部书签栏中的内容保持同步，同时保留两个浏览器原生的根目录层级，更符合日常使用习惯。
 
+Bookmark Bridge 仅支持 macOS，不支持 Windows、Linux 或其他系统，因为通常只有 Mac 用户会同时使用 Safari 和 Chrome。
+
 <img width="1352" height="207" alt="Snipaste_2026-07-14_02-33-11" src="https://github.com/user-attachments/assets/9b3e132c-7760-4fb6-892f-077c242c4da2" />
 
 ## 特点
 
 - 双向同步文件夹、书签标题、网址和顺序
 - Safari“个人收藏”与 Chrome“书签栏”直接映射，不制造额外嵌套层级
+- 支持分别指定 Safari 和 Chrome 中任意可写书签文件夹；默认仍为“个人收藏 ↔ 书签栏”
 - Chrome 变化通过书签事件上报，Safari 每 3 秒进行本地只读比较
 - Chrome 到 Safari 通常约需 1–4 秒；Safari 到 Chrome 通常约需 2–6 秒，偶尔可能需要几十秒
 - 首次使用可选择安全合并、采用 Safari 或采用 Chrome
@@ -33,16 +36,26 @@ Bookmark Bridge 根据作者的实际需求，将同步范围明确限定为 Saf
 | - | 其他书签 | 否 |
 | - | 移动设备书签 | 否 |
 
+表格列出的是默认同步范围。`1.0.1` 起可从菜单栏分别选择 Safari 和 Chrome 中的其他书签文件夹；Safari 阅读列表和 Chrome 受管理目录不会出现在可选列表中。
+
 ## 安装
 
 1. 从 [Releases](https://github.com/FuLi001/bookmark-bridge/releases/latest) 下载最新压缩包并解压。
-2. 将整个 `Bookmark Bridge 1.0.0` 文件夹移入“应用程序”。
+2. 将整个 `Bookmark Bridge 1.0.1` 文件夹移入“应用程序”。
 3. 按住 Control 点击 `Bookmark Bridge.app`，选择“打开”。应用为自签名版本，首次运行可能需要在“系统设置 > 隐私与安全性”中选择“仍要打开”。
 4. 从菜单栏书签图标打开完全磁盘访问权限设置，为 Bookmark Bridge 授权后重启应用。
 5. 打开 `chrome://extensions`，开启开发者模式，选择“加载已解压的扩展程序”，加载 `Bookmark Bridge Chrome Extension` 文件夹。
 6. 等菜单显示两边数量后，优先选择“初始化：安全合并两边”，检查结果并开启“自动双向同步”。
 
 安装包内的 `使用说明.txt` 包含完整教程、冲突处理、备份与卸载步骤。
+
+## 自定义同步目录
+
+默认状态保持不变：Safari“个人收藏”与 Chrome“书签栏”互相同步。
+
+点击菜单栏中的 **Safari：个人收藏** 或 **Chrome：书签栏**，可以分别选择其他书签文件夹。目录使用 Safari UUID 和 Chrome 书签节点 ID 保存，因此重命名后仍能继续识别。更换任意一边的目录时，Bookmark Bridge 会暂停自动同步并清除旧基线，但不会立即修改书签；请检查菜单中显示的新路径，然后重新选择安全合并、采用 Safari 或采用 Chrome。
+
+如果所选目录之后被删除，自动同步会暂停并显示错误，不会悄悄退回默认目录。菜单中的 **恢复默认目录（个人收藏 ↔ 书签栏）** 可以随时恢复原始设置，恢复后同样需要重新初始化。
 
 ## 运行条件
 

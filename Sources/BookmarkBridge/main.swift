@@ -38,12 +38,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let automatic = NSMenuItem(title: "自动双向同步", action: #selector(toggleAutomaticSync(_:)), keyEquivalent: "")
         automatic.target = self
         automatic.state = snapshot.automaticSyncEnabled ? .on : .off
-        automatic.isEnabled = snapshot.status != .needsInitialization && snapshot.status != .waitingForPermission
+        automatic.isEnabled = snapshot.status == .ready
         menu.addItem(automatic)
 
         let check = NSMenuItem(title: "立即检查", action: #selector(checkNow), keyEquivalent: "r")
         check.target = self
         menu.addItem(check)
+
+        menu.addItem(.separator())
+
+        let folderHeader = NSMenuItem(title: "同步目录", action: nil, keyEquivalent: "")
+        folderHeader.isEnabled = false
+        menu.addItem(folderHeader)
+
+        let safariFolder = NSMenuItem(
+            title: "Safari：\(snapshot.selectedSafariFolderPath)",
+            action: nil,
+            keyEquivalent: ""
+        )
+        safariFolder.submenu = folderMenu(
+            choices: snapshot.safariFolders,
+            selectedID: snapshot.selectedSafariFolderID,
+            action: #selector(selectSafariFolder(_:))
+        )
+        safariFolder.isEnabled = !snapshot.safariFolders.isEmpty
+        menu.addItem(safariFolder)
+
+        let chromeFolder = NSMenuItem(
+            title: "Chrome：\(snapshot.selectedChromeFolderPath)",
+            action: nil,
+            keyEquivalent: ""
+        )
+        chromeFolder.submenu = folderMenu(
+            choices: snapshot.chromeFolders,
+            selectedID: snapshot.selectedChromeFolderID,
+            action: #selector(selectChromeFolder(_:))
+        )
+        chromeFolder.isEnabled = !snapshot.chromeFolders.isEmpty
+        menu.addItem(chromeFolder)
+
+        let restoreDefaults = NSMenuItem(
+            title: "恢复默认目录（个人收藏 ↔ 书签栏）",
+            action: #selector(restoreDefaultFolders),
+            keyEquivalent: ""
+        )
+        restoreDefaults.target = self
+        restoreDefaults.isEnabled = snapshot.selectedSafariFolderID != SyncFolderConfiguration.defaultSafariFolderID
+            || snapshot.selectedChromeFolderID != SyncFolderConfiguration.defaultChromeFolderID
+        menu.addItem(restoreDefaults)
 
         menu.addItem(.separator())
 
@@ -88,13 +130,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func useSafari() {
-        confirmReplacement(source: "Safari 个人收藏", destination: "Chrome 书签栏") {
+        let snapshot = coordinator.snapshot()
+        confirmReplacement(
+            source: "Safari：\(snapshot.selectedSafariFolderPath)",
+            destination: "Chrome：\(snapshot.selectedChromeFolderPath)"
+        ) {
             self.coordinator.resolveConflict(using: .safari)
         }
     }
 
     @objc private func useChrome() {
-        confirmReplacement(source: "Chrome 书签栏", destination: "Safari 个人收藏") {
+        let snapshot = coordinator.snapshot()
+        confirmReplacement(
+            source: "Chrome：\(snapshot.selectedChromeFolderPath)",
+            destination: "Safari：\(snapshot.selectedSafariFolderPath)"
+        ) {
             self.coordinator.resolveConflict(using: .chrome)
         }
     }
@@ -127,6 +177,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    @objc private func selectSafariFolder(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        confirmFolderChange(browser: "Safari", path: sender.title) {
+            self.coordinator.selectSafariFolder(id: id, path: sender.title)
+        }
+    }
+
+    @objc private func selectChromeFolder(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        confirmFolderChange(browser: "Chrome", path: sender.title) {
+            self.coordinator.selectChromeFolder(id: id, path: sender.title)
+        }
+    }
+
+    @objc private func restoreDefaultFolders() {
+        confirmFolderChange(browser: "两个浏览器", path: "个人收藏 ↔ 书签栏") {
+            self.coordinator.restoreDefaultFolders()
+        }
+    }
+
+    private func folderMenu(choices: [BookmarkFolderChoice],
+                            selectedID: String,
+                            action: Selector) -> NSMenu {
+        let menu = NSMenu()
+        for choice in choices {
+            let item = NSMenuItem(title: choice.displayPath, action: action, keyEquivalent: "")
+            item.target = self
+            item.representedObject = choice.id
+            item.state = choice.id == selectedID ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    private func confirmFolderChange(browser: String, path: String, action: @escaping () -> Void) {
+        let alert = NSAlert()
+        alert.messageText = "更换\(browser)同步目录？"
+        alert.informativeText = "将改为“\(path)”。自动同步会暂停，旧同步基线会清除，但现在不会修改任何书签。选择后请重新初始化两边。"
+        alert.addButton(withTitle: "更换目录")
+        alert.addButton(withTitle: "取消")
+        if alert.runModal() == .alertFirstButtonReturn { action() }
     }
 
     private func confirmReplacement(source: String, destination: String, action: @escaping () -> Void) {

@@ -1,7 +1,9 @@
 const SERVER = "http://127.0.0.1:17315";
+const DEFAULT_CHROME_FOLDER_ID = "chrome:bookmark-bar";
 let applyingCommand = false;
 let sendTimer = null;
 let commandLoopActive = false;
+let activeConfiguration = {chromeFolderID: DEFAULT_CHROME_FOLDER_ID, revision: -1};
 
 function normalizeNode(node, isRoot = false) {
   if (node.url !== undefined) {
@@ -19,23 +21,85 @@ function normalizeNode(node, isRoot = false) {
   };
 }
 
-async function getBookmarkBar() {
-  const tree = await chrome.bookmarks.getTree();
-  const root = tree[0];
+function findBookmarkBar(root) {
   const bookmarkBar = (root.children || []).find(node => node.id === "1")
     || (root.children || []).find(node => /bookmark.?bar|书签栏/i.test(node.title));
   if (!bookmarkBar) throw new Error("找不到 Chrome 书签栏");
   return bookmarkBar;
 }
 
+async function getSelectedFolder(folderID) {
+  if (folderID === DEFAULT_CHROME_FOLDER_ID) {
+    const tree = await chrome.bookmarks.getTree();
+    return findBookmarkBar(tree[0]);
+  }
+  const subtree = await chrome.bookmarks.getSubTree(folderID);
+  const folder = subtree[0];
+  if (!folder || folder.url !== undefined) throw new Error("找不到所选 Chrome 书签目录");
+  return folder;
+}
+
+function collectFolderChoices(node, parentPath = [], isBrowserRoot = false) {
+  const result = [];
+  for (const child of node.children || []) {
+    if (child.url !== undefined || child.unmodifiable) continue;
+    const path = isBrowserRoot ? [child.title] : [...parentPath, child.title];
+    const isBookmarkBar = isBrowserRoot && (child.id === "1" || /bookmark.?bar|书签栏/i.test(child.title));
+    result.push({
+      id: isBookmarkBar ? DEFAULT_CHROME_FOLDER_ID : child.id,
+      title: child.title || "未命名文件夹",
+      path
+    });
+    result.push(...collectFolderChoices(child, path));
+  }
+  return result;
+}
+
+async function fetchConfiguration() {
+  const response = await fetch(`${SERVER}/configuration`, {cache: "no-store"});
+  if (!response.ok) throw new Error(`本地服务返回 ${response.status}`);
+  return response.json();
+}
+
+async function refreshConfiguration() {
+  const configuration = await fetchConfiguration();
+  const changed = configuration.revision !== activeConfiguration.revision
+    || configuration.chromeFolderID !== activeConfiguration.chromeFolderID;
+  activeConfiguration = configuration;
+  return changed;
+}
+
 async function sendSnapshot() {
   if (applyingCommand) return;
   try {
-    const bookmarkBar = await getBookmarkBar();
+    await refreshConfiguration();
+    const fullTree = await chrome.bookmarks.getTree();
+    const folders = collectFolderChoices(fullTree[0], [], true);
+    let selectedFolder;
+    try {
+      selectedFolder = await getSelectedFolder(activeConfiguration.chromeFolderID);
+    } catch (_) {
+      await fetch(`${SERVER}/chrome/folder-error`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          folderID: activeConfiguration.chromeFolderID,
+          message: "找不到所选 Chrome 同步目录，自动同步已暂停",
+          folders
+        })
+      });
+      throw new Error("找不到所选 Chrome 同步目录");
+    }
+    const selectedChoice = folders.find(folder => folder.id === activeConfiguration.chromeFolderID);
     await fetch(`${SERVER}/chrome/snapshot`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({tree: normalizeNode(bookmarkBar, true)})
+      body: JSON.stringify({
+        tree: normalizeNode(selectedFolder, true),
+        folderID: activeConfiguration.chromeFolderID,
+        folderPath: (selectedChoice?.path || [selectedFolder.title]).join(" › "),
+        folders
+      })
     });
     await chrome.action.setBadgeText({text: ""});
   } catch (error) {
@@ -96,21 +160,24 @@ async function reconcileChildren(parentId, desiredChildren) {
 
 async function pollCommands() {
   try {
+    const configurationChanged = await refreshConfiguration();
+    if (configurationChanged) await sendSnapshot();
     const response = await fetch(`${SERVER}/chrome/commands`, {cache: "no-store"});
     if (response.status === 204) return true;
     if (!response.ok) throw new Error(`本地服务返回 ${response.status}`);
 
     const command = await response.json();
     applyingCommand = true;
+    let commandSucceeded = false;
     try {
-      const bookmarkBar = await getBookmarkBar();
-      await reconcileChildren(bookmarkBar.id, command.tree.children || []);
+      const targetFolder = await getSelectedFolder(command.folderID || activeConfiguration.chromeFolderID);
+      await reconcileChildren(targetFolder.id, command.tree.children || []);
       await fetch(`${SERVER}/chrome/ack`, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({revision: command.revision, success: true})
       });
-      await sendSnapshot();
+      commandSucceeded = true;
     } catch (error) {
       await fetch(`${SERVER}/chrome/ack`, {
         method: "POST",
@@ -120,6 +187,7 @@ async function pollCommands() {
     } finally {
       applyingCommand = false;
     }
+    if (commandSucceeded) await sendSnapshot();
     return true;
   } catch (_) {
     // The menu bar app may not be running yet.

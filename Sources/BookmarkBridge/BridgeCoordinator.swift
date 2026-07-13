@@ -7,12 +7,24 @@ enum InitializationSource {
     case merge
 }
 
+private struct ChromeFolderFailure: Decodable {
+    var folderID: String
+    var message: String
+    var folders: [BookmarkFolderChoice]
+}
+
 struct CoordinatorSnapshot {
     var status: BridgeStatus
     var message: String
     var automaticSyncEnabled: Bool
     var safariTree: BookmarkNode?
     var chromeTree: BookmarkNode?
+    var safariFolders: [BookmarkFolderChoice]
+    var chromeFolders: [BookmarkFolderChoice]
+    var selectedSafariFolderID: String
+    var selectedChromeFolderID: String
+    var selectedSafariFolderPath: String
+    var selectedChromeFolderPath: String
 }
 
 final class BridgeCoordinator {
@@ -26,6 +38,8 @@ final class BridgeCoordinator {
     private var state: PersistedSyncState
     private var safariTree: BookmarkNode?
     private var chromeTree: BookmarkNode?
+    private var safariFolders: [BookmarkFolderChoice] = []
+    private var chromeFolders: [BookmarkFolderChoice] = []
     private var pendingCommand: ChromeCommand?
     private var chromeCommandWaiters: [UUID: (LocalHTTPServer.Response) -> Void] = [:]
     private var status: BridgeStatus = .waitingForPermission
@@ -71,8 +85,56 @@ final class BridgeCoordinator {
                 message: message,
                 automaticSyncEnabled: state.automaticSyncEnabled,
                 safariTree: safariTree,
-                chromeTree: chromeTree
+                chromeTree: chromeTree,
+                safariFolders: safariFolders,
+                chromeFolders: chromeFolders,
+                selectedSafariFolderID: state.folders.safariFolderID,
+                selectedChromeFolderID: state.folders.chromeFolderID,
+                selectedSafariFolderPath: state.folders.safariFolderPath,
+                selectedChromeFolderPath: state.folders.chromeFolderPath
             )
+        }
+    }
+
+    func selectSafariFolder(id: String, path: String) {
+        queue.async {
+            guard id != self.state.folders.safariFolderID else { return }
+            self.state.folders.safariFolderID = id
+            self.state.folders.safariFolderPath = path
+            self.resetAfterFolderChange()
+            self.safariTree = nil
+            self.lastSafariFingerprint = nil
+            self.pollSafari(force: true)
+        }
+    }
+
+    func selectChromeFolder(id: String, path: String) {
+        queue.async {
+            guard id != self.state.folders.chromeFolderID else { return }
+            self.state.folders.chromeFolderID = id
+            self.state.folders.chromeFolderPath = path
+            self.resetAfterFolderChange()
+            self.chromeTree = nil
+            self.wakeChromeCommandWaiters()
+            self.setStatus(.waitingForChrome, "等待 Chrome 读取新同步目录")
+        }
+    }
+
+    func restoreDefaultFolders() {
+        queue.async {
+            let defaults = SyncFolderConfiguration(revision: self.state.folders.revision)
+            guard self.state.folders.safariFolderID != defaults.safariFolderID
+                    || self.state.folders.chromeFolderID != defaults.chromeFolderID else { return }
+            self.state.folders.safariFolderID = defaults.safariFolderID
+            self.state.folders.safariFolderPath = defaults.safariFolderPath
+            self.state.folders.chromeFolderID = defaults.chromeFolderID
+            self.state.folders.chromeFolderPath = defaults.chromeFolderPath
+            self.resetAfterFolderChange()
+            self.safariTree = nil
+            self.chromeTree = nil
+            self.lastSafariFingerprint = nil
+            self.wakeChromeCommandWaiters()
+            self.pollSafari(force: true)
         }
     }
 
@@ -98,13 +160,13 @@ final class BridgeCoordinator {
             case .safari:
                 self.queueChromeUpdate(safari)
                 self.state.baseline = safari
-                self.setStatus(.syncing, "正在以 Safari 个人收藏初始化 Chrome 书签栏")
+                self.setStatus(.syncing, "正在以 Safari 同步目录初始化 Chrome")
             case .chrome:
                 do {
                     try self.writeSafari(chrome)
                     self.state.baseline = chrome
                     self.safariTree = chrome
-                    self.setStatus(.ready, "已以 Chrome 书签栏完成初始化")
+                    self.setStatus(.ready, "已以 Chrome 同步目录完成初始化")
                 } catch {
                     self.setStatus(.error, "写入 Safari 失败：\(error.localizedDescription)")
                 }
@@ -150,10 +212,16 @@ final class BridgeCoordinator {
             let fingerprint = try safariStore.fingerprint()
             let fallbackReadDue = Date().timeIntervalSince(lastForcedSafariRead) >= 3
             if force || fallbackReadDue || lastSafariFingerprint != fingerprint || safariTree == nil {
-                let tree = try safariStore.readFavorites()
-                safariTree = tree
+                let snapshot = try safariStore.readFolder(id: state.folders.safariFolderID)
+                let foldersChanged = safariFolders != snapshot.folders
+                let pathChanged = state.folders.safariFolderPath != snapshot.selectedFolder.displayPath
+                safariTree = snapshot.tree
+                safariFolders = snapshot.folders
+                state.folders.safariFolderPath = snapshot.selectedFolder.displayPath
                 lastSafariFingerprint = try safariStore.fingerprint()
                 lastForcedSafariRead = Date()
+                if pathChanged { persistState() }
+                if foldersChanged || pathChanged { notifyUI() }
                 if applyingSafariChange {
                     applyingSafariChange = false
                 }
@@ -164,8 +232,12 @@ final class BridgeCoordinator {
         } catch {
             let nsError = error as NSError
             if nsError.domain == NSCocoaErrorDomain && (nsError.code == 257 || nsError.code == 513) {
-                setStatus(.waitingForPermission, "需要授予完全磁盘访问权限，才能读取 Safari 个人收藏")
+                setStatus(.waitingForPermission, "需要授予完全磁盘访问权限，才能读取 Safari 书签")
             } else {
+                if error is SafariStoreError {
+                    state.automaticSyncEnabled = false
+                    persistState()
+                }
                 setStatus(.error, "读取 Safari 失败：\(error.localizedDescription)")
             }
         }
@@ -220,7 +292,7 @@ final class BridgeCoordinator {
 
     private func writeSafari(_ tree: BookmarkNode) throws {
         applyingSafariChange = true
-        _ = try safariStore.replaceFavorites(with: tree)
+        _ = try safariStore.replaceFolder(id: state.folders.safariFolderID, with: tree)
         lastSafariFingerprint = try safariStore.fingerprint()
         lastForcedSafariRead = Date()
     }
@@ -235,7 +307,11 @@ final class BridgeCoordinator {
             }
         }
         state.commandRevision += 1
-        pendingCommand = ChromeCommand(revision: state.commandRevision, tree: tree)
+        pendingCommand = ChromeCommand(
+            revision: state.commandRevision,
+            tree: tree,
+            folderID: state.folders.chromeFolderID
+        )
         persistState()
         completeChromeCommandWaiters()
     }
@@ -245,7 +321,7 @@ final class BridgeCoordinator {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
-        let url = directory.appendingPathComponent("Chrome-BookmarkBar-\(formatter.string(from: Date())).json")
+        let url = directory.appendingPathComponent("Chrome-SyncFolder-\(formatter.string(from: Date())).json")
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(tree).write(to: url, options: .atomic)
@@ -263,9 +339,44 @@ final class BridgeCoordinator {
             do {
                 if method == "POST" && path == "/chrome/snapshot" {
                     let snapshot = try decoder.decode(ChromeSnapshot.self, from: body)
-                    self.chromeTree = snapshot.tree
-                    self.evaluateChanges()
+                    let foldersChanged = snapshot.folders.map { $0 != self.chromeFolders } ?? false
+                    if let folders = snapshot.folders {
+                        self.chromeFolders = folders
+                    }
+                    let snapshotFolderID = snapshot.folderID
+                        ?? SyncFolderConfiguration.defaultChromeFolderID
+                    if snapshotFolderID == self.state.folders.chromeFolderID {
+                        self.chromeTree = snapshot.tree
+                        if let folderPath = snapshot.folderPath {
+                            let pathChanged = self.state.folders.chromeFolderPath != folderPath
+                            self.state.folders.chromeFolderPath = folderPath
+                            if pathChanged { self.persistState() }
+                        }
+                        self.evaluateChanges()
+                    }
+                    if foldersChanged { self.notifyUI() }
                     completion((204, Data()))
+                    return
+                }
+                if method == "POST" && path == "/chrome/folder-error" {
+                    let failure = try decoder.decode(ChromeFolderFailure.self, from: body)
+                    self.chromeFolders = failure.folders
+                    self.notifyUI()
+                    if failure.folderID == self.state.folders.chromeFolderID {
+                        self.chromeTree = nil
+                        self.state.automaticSyncEnabled = false
+                        self.persistState()
+                        self.setStatus(.error, failure.message)
+                    }
+                    completion((204, Data()))
+                    return
+                }
+                if method == "GET" && path == "/configuration" {
+                    let payload: [String: Any] = [
+                        "chromeFolderID": self.state.folders.chromeFolderID,
+                        "revision": self.state.folders.revision,
+                    ]
+                    completion((200, try JSONSerialization.data(withJSONObject: payload)))
                     return
                 }
                 if method == "GET" && path == "/chrome/commands" {
@@ -317,6 +428,8 @@ final class BridgeCoordinator {
                         "hasBaseline": self.state.baseline != nil,
                         "treesEqual": self.safariTree != nil && self.safariTree == self.chromeTree,
                         "safeMergeBookmarkCount": safeMergeBookmarkCount,
+                        "safariFolder": self.state.folders.safariFolderPath,
+                        "chromeFolder": self.state.folders.chromeFolderPath,
                         "safari": self.diagnostics(for: self.safariTree),
                         "chrome": self.diagnostics(for: self.chromeTree),
                     ]
@@ -344,7 +457,7 @@ final class BridgeCoordinator {
 
     private func refreshAvailabilityStatus() {
         if safariTree == nil {
-            setStatus(.waitingForPermission, "需要授予完全磁盘访问权限，才能读取 Safari 个人收藏")
+            setStatus(.waitingForPermission, "需要授予完全磁盘访问权限，才能读取 Safari 书签")
         } else if chromeTree == nil {
             setStatus(.waitingForChrome, "等待 Chrome 扩展连接")
         } else if state.baseline == nil {
@@ -363,6 +476,25 @@ final class BridgeCoordinator {
         ]
     }
 
+    private func resetAfterFolderChange() {
+        state.automaticSyncEnabled = false
+        state.baseline = nil
+        state.folders.revision += 1
+        pendingCommand = nil
+        applyingSafariChange = false
+        persistState()
+        wakeChromeCommandWaiters()
+        setStatus(.needsInitialization, "同步目录已更改，请重新初始化")
+    }
+
+    private func wakeChromeCommandWaiters() {
+        let waiters = chromeCommandWaiters.values
+        chromeCommandWaiters.removeAll()
+        for waiter in waiters {
+            waiter((204, Data()))
+        }
+    }
+
     private func persistState() {
         do {
             try stateStore.save(state)
@@ -378,5 +510,9 @@ final class BridgeCoordinator {
         if changed {
             DispatchQueue.main.async { [weak self] in self?.onStatusChanged?() }
         }
+    }
+
+    private func notifyUI() {
+        DispatchQueue.main.async { [weak self] in self?.onStatusChanged?() }
     }
 }

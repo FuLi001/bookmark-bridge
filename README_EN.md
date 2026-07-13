@@ -4,9 +4,13 @@
   <a href="./README.md">简体中文</a> | <strong>English</strong>
 </p>
 
-Automatically synchronize Safari **Favorites** and Chrome **Bookmark Bar** in both directions on the same Mac while preserving each browser's native root folder hierarchy.
+This project was created to provide local, automatic, two-way bookmark synchronization between Safari and Chrome on macOS.
 
-This project was created to provide local, automatic, two-way bookmark synchronization between Safari and Chrome on macOS. Apple's official iCloud extension for Chrome offers similar functionality, but users may encounter synchronization delays, duplicate bookmarks caused by mismatched folder hierarchies, or bookmarks scattered into folders such as **Other Bookmarks**. Bookmark Bridge was built around the author's practical needs: it deliberately maps Safari **Favorites** to Chrome **Bookmark Bar**, keeping the contents of both browsers' top bookmark bars synchronized in a way that matches everyday browsing habits.
+Apple's official iCloud extension for Chrome offers similar functionality, but users may encounter synchronization delays, duplicate bookmarks caused by mismatched folder hierarchies, or bookmarks scattered into folders such as **Other Bookmarks**.
+
+Based on the author's practical needs, Bookmark Bridge defaults to Safari **Favorites** and Chrome **Bookmark Bar**. It keeps the contents of both browsers' top bookmark bars synchronized while preserving their native root folder hierarchies, which better matches everyday browsing habits.
+
+Bookmark Bridge supports macOS only. Windows, Linux, and other operating systems are not supported because Safari and Chrome are generally used together only on a Mac.
 
 <img width="1352" height="207" alt="Bookmark bars synchronized between Safari and Chrome" src="https://github.com/user-attachments/assets/9b3e132c-7760-4fb6-892f-077c242c4da2" />
 
@@ -14,6 +18,7 @@ This project was created to provide local, automatic, two-way bookmark synchroni
 
 - Synchronizes folders, bookmark titles, URLs, and ordering in both directions
 - Maps Safari Favorites directly to Chrome Bookmark Bar without creating an extra nested root folder
+- Lets users select any writable bookmark folder in Safari and Chrome; the default remains Favorites ↔ Bookmark Bar
 - Reports Chrome changes through bookmark events and compares Safari's local bookmark data every 3 seconds
 - Chrome to Safari usually takes about 1–4 seconds; Safari to Chrome usually takes about 2–6 seconds and may occasionally take tens of seconds
 - Offers safe merge, use Safari, or use Chrome during initial setup
@@ -31,16 +36,26 @@ This project was created to provide local, automatic, two-way bookmark synchroni
 | - | Other Bookmarks | No |
 | - | Mobile Bookmarks | No |
 
+The table shows the default sync scope. Starting with `1.0.1`, other Safari and Chrome bookmark folders can be selected from the menu bar. Safari Reading List and managed Chrome folders are excluded from the available choices.
+
 ## Installation
 
 1. Download and extract the latest archive from [Releases](https://github.com/FuLi001/bookmark-bridge/releases/latest).
-2. Move the entire `Bookmark Bridge 1.0.0` folder into Applications.
+2. Move the entire `Bookmark Bridge 1.0.1` folder into Applications.
 3. Control-click `Bookmark Bridge.app` and choose **Open**. The app is self-signed, so its first launch may require choosing **Open Anyway** in **System Settings > Privacy & Security**.
 4. Use the bookmark icon in the menu bar to open Full Disk Access settings, grant access to Bookmark Bridge, and restart the app.
 5. Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the `Bookmark Bridge Chrome Extension` folder.
 6. After the menu shows bookmark counts for both browsers, choose **初始化：安全合并两边** (Initialize: Safely Merge Both), review the result, and enable **自动双向同步** (Automatic Two-Way Sync).
 
 The release archive includes `使用说明.txt` with a complete Chinese guide covering setup, conflicts, backups, and removal.
+
+## Custom Sync Folders
+
+The default behavior is unchanged: Safari **Favorites** synchronizes with Chrome **Bookmark Bar**.
+
+Choose **Safari：个人收藏** or **Chrome：书签栏** from the menu bar to select a different bookmark folder on either side. Bookmark Bridge stores the Safari UUID and Chrome bookmark node ID, so a selected folder remains identifiable after it is renamed. Changing either folder pauses automatic sync and clears the previous baseline without immediately modifying any bookmarks. Review the new paths shown in the menu, then initialize again by choosing safe merge, Safari, or Chrome.
+
+If a selected folder is later deleted, automatic sync pauses with an error instead of silently falling back to the default. Choose **恢复默认目录（个人收藏 ↔ 书签栏）** (Restore Default Folders) to return to the original configuration, then initialize again.
 
 ## Runtime Requirements
 

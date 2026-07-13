@@ -13,5 +13,7 @@ jobs:
         run: swift run BookmarkBridgeChecks
       - name: Validate Chrome extension JavaScript
         run: node --check ChromeExtension/background.js
+      - name: Run Chrome folder selection checks
+        run: node ChromeExtension/checks.js
       - name: Validate Chrome extension manifest
         run: node -e "JSON.parse(require('fs').readFileSync('ChromeExtension/manifest.json', 'utf8'))"

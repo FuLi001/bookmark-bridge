@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
-VERSION="1.0.0"
+VERSION="1.0.1"
 NAME="Bookmark Bridge $VERSION"
 DIST_DIR="$ROOT/outputs/$NAME"
 ZIP_PATH="$ROOT/outputs/$NAME.zip"
