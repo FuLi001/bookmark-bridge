@@ -1,9 +1,13 @@
 # Bookmark Bridge
 
+<p align="center">
+  <strong>简体中文</strong> | <a href="./README_EN.md">English</a>
+</p>
+
 在同一台 Mac 上自动双向同步 Safari“个人收藏”和 Chrome“书签栏”，同时保留两个浏览器原生的根目录层级。
 
-Bookmark Bridge maps Safari **Favorites** to Chrome **Bookmark Bar** and keeps their children in two-way sync without copying either browser's root folder.
-本项目的初衷是，在mac上本地实时自动双向同步Safari和Chrome的书签。虽然苹果官方为Chrome提供了iCloud插件，也可以实现类似功能，但官方插件存在同步有延迟、不同浏览器目录层级不同导致重复备份、不同浏览器目录层级不同导致书签异常散落在其它书签文件夹等问题。而本项目基于作者的需求，指定了同步目录为Safari的个人收藏文件夹以及Chrome书签栏，表现形式为两个浏览器的顶部书签栏实时同步，符合大部分人的使用习惯。
+本项目的初衷是在 Mac 上本地、自动、双向同步 Safari 和 Chrome 的书签。虽然 Apple 官方为 Chrome 提供了 iCloud 扩展，也能实现类似功能，但可能遇到同步延迟、不同浏览器目录层级导致重复书签，以及书签散落到“其他书签”等目录的问题。Bookmark Bridge 根据作者的实际需求，将同步范围明确限定为 Safari“个人收藏”和 Chrome“书签栏”，让两个浏览器顶部书签栏中的内容保持同步，更符合日常使用习惯。
+
 <img width="1352" height="207" alt="Snipaste_2026-07-14_02-33-11" src="https://github.com/user-attachments/assets/9b3e132c-7760-4fb6-892f-077c242c4da2" />
 
 ## 特点
@@ -29,7 +33,7 @@ Bookmark Bridge maps Safari **Favorites** to Chrome **Bookmark Bar** and keeps t
 
 ## 安装
 
-1. 从 [Releases](../../releases) 下载最新压缩包并解压。
+1. 从 [Releases](https://github.com/FuLi001/bookmark-bridge/releases/latest) 下载最新压缩包并解压。
 2. 将整个 `Bookmark Bridge 1.0.0` 文件夹移入“应用程序”。
 3. 按住 Control 点击 `Bookmark Bridge.app`，选择“打开”。应用为自签名版本，首次运行可能需要在“系统设置 > 隐私与安全性”中选择“仍要打开”。
 4. 从菜单栏书签图标打开完全磁盘访问权限设置，为 Bookmark Bridge 授权后重启应用。
