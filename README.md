@@ -5,7 +5,9 @@
 </p>
 
 本项目的初衷是在 Mac 上本地、自动、双向同步 Safari 和 Chrome 的书签。
+
 虽然 Apple 官方为 Chrome 提供了 iCloud 扩展，也能实现类似功能，但可能遇到同步延迟、不同浏览器目录层级导致重复书签，以及书签散落到“其他书签”等目录的问题。
+
 Bookmark Bridge 根据作者的实际需求，将同步范围明确限定为 Safari“个人收藏”和 Chrome“书签栏”，让两个浏览器顶部书签栏中的内容保持同步，同时保留两个浏览器原生的根目录层级，更符合日常使用习惯。
 
 <img width="1352" height="207" alt="Snipaste_2026-07-14_02-33-11" src="https://github.com/user-attachments/assets/9b3e132c-7760-4fb6-892f-077c242c4da2" />
